@@ -1,0 +1,11 @@
+# DECISIONS.md
+
+1. **Indexes.** I use a unique index on `employees.emp_code` so duplicate employee creation is prevented by MongoDB, and a unique `(emp_code, date)` index so two punch-ins cannot create the same attendance day. Department/join-date supports headcount queries. Attendance indexes support employee history, date sorting, status filtering and month/late queries. I would avoid adding an index for every field because each index adds storage and slows writes.
+
+2. **Punch-in race.** Both requests may reach the insert at nearly the same time, but the unique compound index is enforced inside MongoDB. One insert succeeds and returns 201. The other raises a duplicate-key error and is translated to 409. A preliminary read is not treated as the concurrency guarantee.
+
+3. **Ties.** MongoDB `$rank` assigns equal late-minute totals the same rank. I filter on `rank <= limit` after ranking, so tied employees at the cutoff are all returned. Rows are then ordered by late minutes descending and employee code ascending.
+
+4. **Headcount.** Department summaries start from eligible employees, not attendance logs, and preserve employees whose lookup returns no logs. This counts joined employees with zero records and excludes employees who joined after the month ends.
+
+5. **100x data.** I would inspect real execution statistics, tune compound indexes to match measured query patterns, and consider pre-aggregated daily metrics for expensive analytics while retaining the raw attendance history as the source of truth.
