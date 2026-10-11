@@ -1,0 +1,48 @@
+"""Focused tests for deterministic attendance rules; MongoDB integration tests are separate."""
+from datetime import datetime, timezone
+
+from app.main import (
+    IST,
+    attendance_date,
+    compute_late_minutes,
+    compute_overtime,
+    compute_work_hours,
+    epoch_to_dt,
+    dt_to_epoch,
+    round_half_up,
+)
+
+
+def epoch_for_ist(value: str) -> int:
+    return int(datetime.fromisoformat(value).replace(tzinfo=IST).timestamp() * 1000)
+
+
+def test_epoch_milliseconds_round_trip_to_whole_seconds():
+    value = epoch_for_ist("2026-10-12T09:40:00.900")
+    parsed = epoch_to_dt(value)
+    assert parsed.microsecond == 0
+    assert dt_to_epoch(parsed) == value // 1000 * 1000
+
+
+def test_late_grace_period_boundaries():
+    assert compute_late_minutes(datetime.fromisoformat("2026-10-12T04:10:00+00:00"), "09:30", "2026-10-12") == 0
+    assert compute_late_minutes(datetime.fromisoformat("2026-10-12T04:10:01+00:00"), "09:30", "2026-10-12") == 10
+    assert compute_late_minutes(datetime.fromisoformat("2026-10-12T04:45:59+00:00"), "09:30", "2026-10-12") == 45
+
+
+def test_work_hours_uses_half_up_rounding():
+    start = datetime(2026, 10, 12, 0, 0, tzinfo=timezone.utc)
+    end = datetime(2026, 10, 12, 4, 30, 54, tzinfo=timezone.utc)
+    assert compute_work_hours(start, end) == 4.52
+    assert round_half_up(1.005, 2) == 1.01
+
+
+def test_overtime_threshold_and_overnight_shift():
+    assert compute_overtime(datetime.fromisoformat("2026-10-13T00:29:00+00:00"), "06:00", "2026-10-12", "22:00") == 0
+    assert compute_overtime(datetime.fromisoformat("2026-10-13T00:30:00+00:00"), "06:00", "2026-10-12", "22:00") == 30
+
+
+def test_overnight_punch_in_belongs_to_previous_shift_date():
+    emp = {"shift_start": "22:00", "shift_end": "06:00"}
+    punch_in = datetime.fromisoformat("2026-10-13T00:30:00+00:00")  # 06:00 IST
+    assert attendance_date(punch_in, emp) == "2026-10-12"
