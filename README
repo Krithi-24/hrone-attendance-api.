@@ -1,0 +1,37 @@
+# HROne Employee Attendance & Analytics API
+
+FastAPI + MongoDB implementation draft for the Software Engineer Trainee assignment.
+
+## Requirements
+- Python 3.11+
+- MongoDB 6.0+
+- Git
+
+## Run locally (Windows PowerShell)
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+$env:MONGO_URI = "mongodb://localhost:27017"
+$env:MONGO_DB = "attendance_db"
+python sample_seed.py
+uvicorn app.main:app --port 8000
+```
+
+On macOS/Linux, activate with `source .venv/bin/activate`. Set `MONGO_URI` and `MONGO_DB` in the environment before starting the server. On startup, the application creates its indexes. Open `http://127.0.0.1:8000/docs` to explore the API.
+
+## Tests
+
+```powershell
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+```
+
+The included unit tests cover deterministic time and attendance calculations. Run additional integration tests against MongoDB 6.0+ before submission, especially concurrency, aggregation results, and `explain` plans on a large dataset.
+
+## Verification status
+
+Python syntax was checked while preparing this archive. Full integration tests have **not** been run in this environment because MongoDB/PyMongo are unavailable here. Treat this as a working draft, not a verified final submission: run the tests locally, review the implementation, and ensure you can explain the code and design choices in your own words before submitting.
+
+Do not commit `.env` files, credentials, virtual environments, data dumps, or a Dockerfile.
