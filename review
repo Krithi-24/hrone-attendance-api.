@@ -1,0 +1,25 @@
+# REVIEW.md
+
+| # | Where | What is wrong | How to notice | Fix |
+|---|---|---|---|---|
+| 1 | `compute_late_minutes` | Uses a datetime replacement that breaks when punch-in is before shift start and does not implement the strict >10-minute grace rule correctly at the boundary. | Test 09:40:00 and 09:40:01 for a 09:30 shift. | Compare elapsed seconds to 600; report floor whole minutes from shift start only after the threshold is crossed. |
+| 2 | `compute_work_hours` | Python float rounding uses ties-to-even rather than required decimal half-up. | A duration exactly halfway between hundredths rounds differently. | Use `Decimal` with `ROUND_HALF_UP`. |
+| 3 | `compute_overtime` | Always puts shift end on the same calendar date, so overnight shifts get incorrect overtime. It also counts any positive overtime. | Test a 22:00–06:00 shift punching out at 06:40 next day and at +29 minutes. | Put overnight shift end on the next date and count only when floored minutes are at least 30. |
+| 4 | Mongo client configuration | Default PyMongo datetimes are naive and the app mixes local time with UTC. | Run with a non-IST host timezone and compare epoch values. | Use timezone-aware UTC datetimes and explicit IST conversion only for calendar/shift rules. |
+| 5 | startup / indexes | No indexes or uniqueness constraints are created. Duplicate employee codes and attendance days can race. | Send parallel duplicate create/punch-in requests. | Create unique indexes on employee code and (employee code, date), plus query indexes at startup. |
+| 6 | `health` | Does not verify that MongoDB is available. | Stop MongoDB and request `/health`. | Ping MongoDB and return 503 if it cannot be reached. |
+| 7 | `create_employee` | Check-then-insert is race-prone, accepts weakly validated data, uses local naive time, and does not translate duplicate-key errors to 409. | Parallel duplicate employee creation or invalid shift/date input. | Validate input, set UTC creation time, rely on unique index, map duplicate key to 409. |
+| 8 | `list_employees` | Skip uses `page * page_size`, total ignores department, results are unsorted. | Page 1 skips first 20; filtered total differs from returned set. | Use `(page-1)*page_size`, filtered count, stable `emp_code` sort and page-size bounds. |
+| 9 | `punch_in` | Does not return 404 for unknown employees safely; epoch conversion uses local timezone and truthiness; check-then-insert races; accepts invalid statuses/timestamps; uses wrong date for overnight shifts. | Unknown employee, `punched_at=0`, seconds input, overnight shift, simultaneous requests. | Validate input, normalize UTC seconds, calculate IST attendance date, rely on unique index and map duplicate key to 409. |
+| 10 | `list_attendance` | Loads every matching record into Python, sorts/slices in memory, returns internal IDs, has wrong pagination risk and no date validation. | Seed 100k logs or pass reversed date range. | Filter/count/sort/skip/limit in MongoDB and omit `_id` from API responses. |
+| 11 | API response shape | Starter exposes Mongo-generated IDs and returns BSON datetime objects rather than epoch milliseconds. | Inspect punch response and nested history fields. | Convert instants to integer epoch milliseconds and omit internal IDs. |
+| 12 | Attendance concurrency | A pre-insert existence check is not atomic. | Parallel requests for same employee and date. | Unique compound index is the final concurrency guard. |
+| 13 | `history` contract | No correction logic exists in starter; a naive update could overwrite concurrent audit history. | Submit two concurrent PATCH requests. | Use an atomic compare-and-set and append history with `$push`; conflict if the record changed. |
+| 14 | Analytics endpoints | Missing entirely from starter. | Requests return 404. | Add MongoDB aggregation pipelines for all required summaries and trends. |
+| 15 | Explain endpoint | Missing entirely; there is no proof that the main query uses indexes. | Call `/admin/explain/...`. | Run MongoDB `explain` with `executionStats` for the matching query/pipeline. |
+
+## Reviewed and retained
+
+- The collections and business identifier are `employees` and `attendance_logs`, with `emp_code` as the public employee identifier.
+- `history` is for manual corrections only; punch-in and punch-out must not append history.
+- The API's derived attendance values should be stored and used by analytics rather than recalculated in reporting endpoints.
